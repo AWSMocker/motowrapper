@@ -1,0 +1,20 @@
+setup:
+  - S3:
+    - name: dip-sfg-integration-bucket
+      file:
+      - localFile: test/input/product_config.xml
+        s3FileName: inbound/producteso-au/product_config.xml
+      - localFile: test/input/category_config.xml
+        s3FileName: inbound/producteso-au/category_config.xml
+    - name: static_bucket
+      file:
+      - localFile: test/input/lookup.csv
+        s3FileName: mock/input/lookup.csv
+
+validate:
+  - source:
+    - S3:
+      - name: dip-sfg-integration-bucket
+      - file:
+        - localFile: test/output/product_config.xml
+          s3FileName: inbound/producteso-au/product_config.xml
