@@ -84,7 +84,7 @@ def sqs_mock():
 
 
 def test_moto_lambda(moto_wrapper, s3_mock):
-    moto_wrapper('test.yaml')
+    moto_wrapper('moto_test/test.yaml')
     s3_mock.put_object(
         Body='This is daya',
         Bucket='Bucket',
@@ -94,3 +94,14 @@ def test_moto_lambda(moto_wrapper, s3_mock):
 
     file_content = file_content["Body"].read().decode("utf-8")
     print("Test", file_content)
+
+def test_moto_sqs_lambda(moto_wrapper, sqs_mock):
+    moto_wrapper('moto_test/test.yaml')
+    sqs_mock.send_message(QueueUrl = 'bp.dip.demo.fifo',
+            MessageBody = json.dumps("Hi... Message had received successfully"))
+    print("Message has been sent")
+
+    response = sqs_mock.receive_message(QueueUrl='bp.dip.demo.fifo')
+    received_json = response["Messages"][0]["Body"]
+    print(received_json)
+

@@ -59,7 +59,8 @@ class S3Handler(AbstractHandler):
 
 
 class SQSHandler(AbstractHandler):
-
+    SQS_SERVICE_KEY = 'SQS'
+    SQS_NAME = 'Name'
     def _get_service_tag(self):
         return 'SQS'
 
@@ -67,6 +68,14 @@ class SQSHandler(AbstractHandler):
         super().__init__(next_handler)
 
     def handler(self, wrapper_context: WrapperContext):
+        sqs_envs = wrapper_context.env_in_json[SQSHandler.SQS_SERVICE_KEY]
+        for env in sqs_envs:
+            sqs_name = env.get(SQSHandler.SQS_NAME)
+
+            wrapper_context.sqs.create_queue(
+                QueueName=sqs_name
+            )
+            logging.info('SQS created ')
         print('SQS Handler')
 
 

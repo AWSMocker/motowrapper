@@ -2,13 +2,13 @@ setup:
   S3:
     - bucketName: dip-sfg-integration-bucket
       files:
-      - localFile: test/input/product_config.xml
+      - localFile: moto_test/test/input/product_config.xml
         s3FileName: inbound/producteso-au/product_config.xml
-      - localFile: test/input/site_lookup.json
+      - localFile: moto_test/test/input/site_lookup.json
         s3FileName: inbound/producteso-au/site_lookup.json
     - bucketName: static_bucket
       files:
-      - localFile: test/input/lookup.csv
+      - localFile: moto_test/test/input/lookup.csv
         s3FileName: mock/input/lookup.csv
   SQS:
       - Name:  bp.dip.demo.fifo
