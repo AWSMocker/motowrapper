@@ -9,10 +9,13 @@ from functools import partial
 from dacite import from_dict
 from moto import mock_s3
 from yaml.loader import SafeLoader
-from moto import mock_sns, mock_sqs
+from moto import mock_sns, mock_sqs, mock_dynamodb2
 from dataclasses import dataclass, field
 from moto_test.src.motowrapper.handler import env_creator, WrapperContext
 
+from aws_lambda_powertools import Logger
+
+logger = Logger()
 
 # Open the file and load the file
 def __convert_to_json(file_location):
@@ -20,12 +23,12 @@ def __convert_to_json(file_location):
         return yaml.load(f, Loader=SafeLoader)
 
 
-def __mock_env(sqs, s3, env_detail, file_type='yaml'):
+def __mock_env(sqs, s3, dynamodb, env_detail, file_type='yaml'):
     json_stack = __jsonfy_evn_details(env_detail, file_type)
 
     setup_list = json_stack.get("setup")
 
-    env_creator.prepare_env(WrapperContext(sqs=sqs, s3=s3, env_in_json=setup_list))
+    env_creator.prepare_env(WrapperContext(sqs=sqs, s3=s3, dynamodb=dynamodb, env_in_json=setup_list))
     s3.create_bucket(
         Bucket='Bucket'
     )
@@ -42,29 +45,29 @@ def __jsonfy_evn_details(env_detail, file_type):
     return json_stack
 
 
+# @pytest.fixture(scope="module")
+# def moto_wrapper(mock_sqs, mock_s3, mock_dynamodb2):
+#     print('moto_wrapper')
+#     return partial(__mock_env, mock_sqs, mock_s3, mock_dynamodb2)
+
+
+# def test_moto_lambda(moto_wrapper, mock_s3):
+#     moto_wrapper('test.yaml')
+#     mock_s3.put_object(
+#         Body='This is daya',
+#         Bucket='Bucket',
+#         Key='/tmp/data/abc.txt'
+#     )
+#     file_content = mock_s3.get_object(Bucket='Bucket', Key='/tmp/data/abc.txt')
+
+#     file_content = file_content["Body"].read().decode("utf-8")
+#     print("Test", file_content)
+
+
 @pytest.fixture(scope="module")
-def moto_wrapper(mock_sqs, mock_s3):
+def moto_wrapper(sqs_mock, s3_mock, dynamodb_mock):
     print('moto_wrapper')
-    return partial(__mock_env, mock_sqs, mock_s3)
-
-
-def test_moto_lambda(moto_wrapper, mock_s3):
-    moto_wrapper('test.yaml')
-    mock_s3.put_object(
-        Body='This is daya',
-        Bucket='Bucket',
-        Key='/tmp/data/abc.txt'
-    )
-    file_content = mock_s3.get_object(Bucket='Bucket', Key='/tmp/data/abc.txt')
-
-    file_content = file_content["Body"].read().decode("utf-8")
-    print("Test", file_content)
-
-
-@pytest.fixture(scope="module")
-def moto_wrapper(sqs_mock, s3_mock):
-    print('moto_wrapper')
-    return partial(__mock_env, sqs_mock, s3_mock)
+    return partial(__mock_env, sqs_mock, s3_mock, dynamodb_mock)
 
 
 @pytest.fixture(scope="module")
@@ -83,6 +86,14 @@ def sqs_mock():
         print("\n SQS Down....")
 
 
+@pytest.fixture(scope="module")
+def dynamodb_mock():
+    with mock_dynamodb2():
+        print("\n dynamoDB Up....")
+        yield boto3.client("dynamodb")
+        print("\n dynamoDB Down....")
+
+
 def test_moto_lambda(moto_wrapper, s3_mock):
     moto_wrapper('moto_test/test.yaml')
     s3_mock.put_object(
@@ -94,14 +105,36 @@ def test_moto_lambda(moto_wrapper, s3_mock):
 
     file_content = file_content["Body"].read().decode("utf-8")
     print("Test", file_content)
+    assert 2==200
+
 
 def test_moto_sqs_lambda(moto_wrapper, sqs_mock):
     moto_wrapper('moto_test/test.yaml')
     sqs_mock.send_message(QueueUrl = 'bp.dip.demo.fifo',
             MessageBody = json.dumps("Hi... Message had received successfully"))
-    print("Message has been sent")
+    logger.info("Message has been sent")
 
     response = sqs_mock.receive_message(QueueUrl='bp.dip.demo.fifo')
     received_json = response["Messages"][0]["Body"]
-    print(received_json)
+    logger.info(received_json)
+    assert 2==200
 
+
+def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
+    moto_wrapper('moto_test/test.yaml')
+    dynamodb_mock.put_item(
+        TableName='dynamodb_table_name',
+        Item={
+            'source_sys_name':{'S':'ODP'},
+            'value':{'S':'20'}
+        }
+    )
+    logger.info("Item has successfully added to dynamodb table")
+
+    response = dynamodb_mock.get_item(
+        TableName='dynamodb_table_name',
+        Key={"source_sys_name": {"S": "ODP"}}
+    )
+    logger.info("Successfully read item from dynamodb table")
+    print(response)
+    assert 2==200

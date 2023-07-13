@@ -12,11 +12,13 @@ import logging
 class WrapperContext(object):
     sqs = None
     s3 = None
+    dynamodb = None
     env_in_json = None
 
-    def __init__(self, sqs, s3, env_in_json):
+    def __init__(self, sqs, s3, dynamodb, env_in_json):
         self.sqs = sqs
         self.s3 = s3
+        self.dynamodb = dynamodb
         self.env_in_json = env_in_json
 
 
@@ -56,7 +58,7 @@ class S3Handler(AbstractHandler):
             for file in files:
                 _from_local_to_s3(wrapper_context.s3, bucket_name, file.get('s3FileName'),
                                   file.get('localFile'))
-
+        print("s3 handler")
 
 class SQSHandler(AbstractHandler):
     SQS_SERVICE_KEY = 'SQS'
@@ -78,6 +80,29 @@ class SQSHandler(AbstractHandler):
             logging.info('SQS created ')
         print('SQS Handler')
 
+
+class DynamodbHandler(AbstractHandler):
+    DYNAMODB_SERVICE_KEY = 'DynamoDB'
+    TABLE_NAME = 'Name'
+    KEY_SCHEMA_NAME = 'KeySchema'
+    ATTRIBUTE_DEFINITION_NAME = 'AttributeDefinitions'
+
+    def __init__(self, next_handler):
+        super().__init__(next_handler)
+
+    def handler(self, wrapper_context: WrapperContext):
+        dynamodb_envs = wrapper_context.env_in_json[DynamodbHandler.DYNAMODB_SERVICE_KEY]
+        for env in dynamodb_envs:
+            table_name = env.get(DynamodbHandler.TABLE_NAME)
+            key_schema_name = env.get(DynamodbHandler.KEY_SCHEMA_NAME)
+            attribute_definiton_name = env.get(DynamodbHandler.ATTRIBUTE_DEFINITION_NAME)
+            wrapper_context.dynamodb.create_table(
+                TableName=table_name,
+                KeySchema= _generate_key_schema(key_schema_name),
+                AttributeDefinitions = _generate_attribute_definition(attribute_definiton_name)
+            )
+            logging.info('DynamoDB Table has been created ')
+        print('Dyanmodb Handler')
 
 class EnvCreator(object):
 
@@ -102,7 +127,25 @@ def _from_local_to_s3(s3, bucket_name, key_name,
             Key=key_name
         )
 
+def _generate_key_schema(key_schema_name):
+    key_schema = []
+    for itr in key_schema_name:
+        schema = {}
+        schema['AttributeName'] = itr.get('AttributeName')
+        schema['KeyType'] = itr.get('KeyType')
+        key_schema.append(schema)
+    return key_schema
+
+def _generate_attribute_definition(attribute_definiton_name):
+    attr_definition = []
+    for itr in attribute_definiton_name:
+        definition = {}
+        definition['AttributeName'] = itr.get('AttributeName')
+        definition['AttributeType'] = itr.get('AttributeType')
+        attr_definition.append(definition)
+    return attr_definition
 
 sqs_handler = SQSHandler(None)
 s3_handler = S3Handler(sqs_handler)
-env_creator = EnvCreator(s3_handler)
+dynamodb_handler = DynamodbHandler(s3_handler)
+env_creator = EnvCreator(dynamodb_handler)

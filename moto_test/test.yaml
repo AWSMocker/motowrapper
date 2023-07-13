@@ -12,6 +12,17 @@ setup:
         s3FileName: mock/input/lookup.csv
   SQS:
       - Name:  bp.dip.demo.fifo
+  SNS:
+      - Name: bp.dip.demo_sns.fifo
+  DynamoDB:
+      - Name: dynamodb_table_name
+        KeySchema: 
+        - AttributeName: 'source_sys_name'
+          KeyType: 'S'
+        AttributeDefinitions:
+        - AttributeName: 'source_sys_name'
+          AttributeType: 'HASH'
+    
 validate:
   - source:
     - S3:
