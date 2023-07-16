@@ -93,6 +93,8 @@ class DynamodbHandler(AbstractHandler):
     TABLE_NAME = 'Name'
     KEY_SCHEMA_NAME = 'KeySchema'
     ATTRIBUTE_DEFINITION_NAME = 'AttributeDefinitions'
+    GLOBAL_SECONDARY_INDEX_PROP_NAME = 'GlobalSecondaryIndexes'
+    INITIAL_LOAD_PROP_NAME = 'InitialLoad'
 
     def __init__(self, next_handler):
         super().__init__(next_handler)
@@ -103,12 +105,18 @@ class DynamodbHandler(AbstractHandler):
             table_name = env.get(DynamodbHandler.TABLE_NAME)
             key_schema_name = env.get(DynamodbHandler.KEY_SCHEMA_NAME)
             attribute_definiton_name = env.get(DynamodbHandler.ATTRIBUTE_DEFINITION_NAME)
+            global_secondary_index = env.get(DynamodbHandler.GLOBAL_SECONDARY_INDEX_PROP_NAME)
             wrapper_context.dynamodb.create_table(
                 TableName=table_name,
-                KeySchema=_generate_key_schema(key_schema_name),
-                AttributeDefinitions=_generate_attribute_definition(attribute_definiton_name)
+                KeySchema=key_schema_name, #_generate_key_schema(key_schema_name),
+                GlobalSecondaryIndexes = global_secondary_index,
+                AttributeDefinitions=attribute_definiton_name #_generate_attribute_definition(attribute_definiton_name)
             )
             logging.info('DynamoDB Table has been created ')
+            files = env.get(DynamodbHandler.INITIAL_LOAD_PROP_NAME)
+            for file in files:
+                _from_local_to_dynamodb(wrapper_context.dynamodb, table_name,
+                                        file.get('SourceType'), file.get('localFile'))
         print('Dyanmodb Handler')
 
 
@@ -133,6 +141,22 @@ def _from_local_to_s3(s3, bucket_name, key_name,
             Bucket=bucket_name,
             Key=key_name
         )
+
+
+def _from_local_to_dynamodb(dynamodb, table_name, source_type,
+                             file_loc, encoding='utf-8'):
+    table = dynamodb.Table(table_name)
+    with io.open(file_loc, "r", encoding=encoding) as data_file:
+        column_names = next(data_file).strip("\n").split(',')
+        for records in data_file:
+            record = records.strip("\n").split(',')
+            item = {}
+            for idx, column_name in enumerate(column_names):
+                item[column_name.lower()] = record[idx]
+            table.put_item(
+                Item=item
+            )
+    logger.info("Successfully inserted initial load to dynamodb table")
 
 
 def _generate_key_schema(key_schema_name):
@@ -205,5 +229,5 @@ class SNSHandler(AbstractHandler):
 sqs_handler = SQSHandler(None)
 s3_handler = S3Handler(sqs_handler)
 dynamodb_handler = DynamodbHandler(s3_handler)
-sns_handler = SNSHandler(None)
+sns_handler = SNSHandler(dynamodb_handler)
 env_creator = EnvCreator(sns_handler)

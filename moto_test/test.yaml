@@ -17,24 +17,31 @@ setup:
         # Need to improve for local secondary indexes
     DynamoDB:
       - Name: dynamodb_table_name
-      - AttributeDefinitions:
-          - AttributeName: 'source_sys_name'
-            AttributeType: 'S'
-      - KeySchema:
-          # Code for range
-          - AttributeName: 'source_sys_name'
-            KeyType: 'HASH'
+        AttributeDefinitions:
+        - AttributeName: 'source_sys_name'
+          AttributeType: 'S'
+        - AttributeName: 'market'
+          AttributeType: 'S'
+        - AttributeName: 'value'
+          AttributeType: 'S'
+        KeySchema:
+        - AttributeName: 'source_sys_name'
+          KeyType: 'HASH'
+        - AttributeName: 'market'
+          KeyType: 'RANGE'
       # Code for below
-      - InitialLoad:
+        InitialLoad:
           - SourceType: 'local'
-            localFile: mock/input/lookup.csv
-      - GlobalSecondaryIndexes:
-          - IndexName: ""
+            localFile: moto_test/test/input/initial_load.csv
+        GlobalSecondaryIndexes:
+          - IndexName: "secondary_index"
             KeySchema:
-              - AttributeName: "gsi_region_partition_key"
+              - AttributeName: "market"
                 KeyType: HASH
-              - AttributeName: "gsi_region_sort_key"
+              - AttributeName: "value"
                 KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
 validate:
     - global:
         - SNS:

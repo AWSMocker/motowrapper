@@ -94,7 +94,7 @@ def sqs_mock():
 def dynamodb_mock():
     with mock_dynamodb2():
         print("\n dynamoDB Up....")
-        yield boto3.client("dynamodb")
+        yield boto3.resource("dynamodb")
         print("\n dynamoDB Down....")
 
 
@@ -147,18 +147,21 @@ def test_moto_sns_lambda(moto_wrapper, sns_mock, sqs_mock):
 
 def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
     moto_wrapper('moto_test/test.yaml')
-    dynamodb_mock.put_item(
-        TableName='dynamodb_table_name',
+    dynamodb_table = dynamodb_mock.Table('dynamodb_table_name')
+    dynamodb_table.put_item(
         Item={
-            'source_sys_name': {'S': 'ODP'},
-            'value': {'S': '20'}
+            'source_sys_name': 'ODP',
+            'market': 'AU',
+            'value': '20'
         }
     )
     logger.info("Item has successfully added to dynamodb table")
 
-    response = dynamodb_mock.get_item(
-        TableName='dynamodb_table_name',
-        Key={"source_sys_name": {"S": "ODP"}}
+    response = dynamodb_table.get_item(
+        Key={"source_sys_name": "ODP", 'market': 'AU'}
+    )
+    gxs_response = dynamodb_table.get_item(
+        Key={"source_sys_name": "GXS", 'market': 'AU'}
     )
     logger.info("Successfully read item from dynamodb table")
-    print(response)
+    
