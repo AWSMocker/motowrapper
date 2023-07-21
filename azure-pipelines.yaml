@@ -101,15 +101,15 @@ stages:
           #     syncMode: true
           #     synchronise: true
           #     targetBranch: refs/heads/develop
-          - template: /ADO/sca/steps/sca-template-step.yml@dses-sec-templates 
-            parameters:
-              scaProjectName: '$(Build.Repository.Name)'
-              scaTeamPath: '/CxServer/bpgroup/InnovationAndEngineering/DigitalCustomersAndMarkets/ConsumerPlatformsB2cDigitalPortfolioDelivery/B2cSiteExperienceAndConvenienceSeAndC/MAndCConvenienceLegacy'
-              scaServiceConnection: 'checkmarx_sca_DST-RP_Convenience'
-              scaThreshold: 'false' #true or false
-              scaHigh: '' #Number or High before breaking build
-              scaMedium: ''
-              scaLow: ''      
+          # - template: /ADO/sca/steps/sca-template-step.yml@dses-sec-templates 
+          #   parameters:
+          #     scaProjectName: '$(Build.Repository.Name)'
+          #     scaTeamPath: '/CxServer/bpgroup/InnovationAndEngineering/DigitalCustomersAndMarkets/ConsumerPlatformsB2cDigitalPortfolioDelivery/B2cSiteExperienceAndConvenienceSeAndC/MAndCConvenienceLegacy'
+          #     scaServiceConnection: 'checkmarx_sca_DST-RP_Convenience'
+          #     scaThreshold: 'false' #true or false
+          #     scaHigh: '' #Number or High before breaking build
+          #     scaMedium: ''
+          #     scaLow: ''      
 
           # SAM Build Stage
           - script: sam build -b $(Build.ArtifactStagingDirectory)
