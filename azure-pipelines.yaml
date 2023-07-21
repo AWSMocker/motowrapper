@@ -1,0 +1,121 @@
+trigger:
+  branches:
+    include:
+      - release
+    exclude:
+      - develop
+      - feature/*
+variables:
+  - name: PIP_CACHE_DIR
+    value: $(Pipeline.Workspace)/.pip
+  - name: internal_agent_pool
+    value: GenericPoolLinux-SS
+
+parameters:
+- name: ArtifactFeedName
+  displayName: Artifact Feed Name
+  values:
+    - devopsartifactfeed-dev
+    - devopsartifactfeed-test
+    - devopsartifactfeed
+  default: devopsartifactfeed-test
+
+# #Checkmarx SAST and SCA configuration 
+# resources:
+#   repositories:
+#   - repository: AdsTemplatesSecurity
+#     type: git
+#     name: DevOps-SRE/ads-ado-templates-security
+#     ref: refs/tags/2.x
+#     endpoint: dses-sec-sast-DST-RP_Convenience
+  
+#   - repository: dses-sec-templates
+#     type: git
+#     name: DS-DSES/dses-sec-templates
+#     endpoint: dses-sec-sca-DST-RP_Convenience
+
+pool: $(internal_agent_pool)
+stages:
+  - stage: Build
+    jobs:
+      - job : scan
+        displayName: 'Build'
+        steps:
+          - task: UsePythonVersion@0
+            displayName: "Setup python version"
+            inputs:
+              versionSpec: "3.8"
+              addToPath: true
+          - task: Cache@2
+            inputs:
+              key: 'python | "$(Agent.OS)" | requirements.txt'
+              restoreKeys: |
+                python | "$(Agent.OS)"
+                python
+              path: $(PIP_CACHE_DIR)
+            displayName: Cache pip packages
+          # Install dependencies
+          - script: |
+              pip3 install wheel
+              pip3 install pipenv
+              pip3 install aws-sam-cli==1.37.0
+              pip3 install pip --upgrade
+              pip3 install pyopenssl --upgrade
+              pip3 install -r requirements.txt
+            displayName: "Install dependencies"
+          # Run unit tests
+          - script: |
+              python -m build
+            displayName: "Build"
+
+          - task: TwineAuthenticate@1
+            inputs:
+              artifactFeed: DST-RP_Convenience/${{ parameters.ArtifactFeedName }}
+
+          - script: |
+              python -m twine upload -r ${{ parameters.ArtifactFeedName }} --config-file $(PYPIRC_PATH) dist/*
+            displayName: "Upload"
+
+          # Coverage report generator
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFiles: "**/test-*.xml"
+              testRunTitle: "Publish test results for Python $(python.version)"
+
+          # Publish test results
+          - task: PublishCodeCoverageResults@1
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: "$(System.DefaultWorkingDirectory)/**/coverage.xml"
+          
+          # Checkmark and Blackduck Scans
+          # Checkmarx SAST and SCA
+          # - template: templates-common/sast/checkmarx/steps/scan-checkmarx.yml@AdsTemplatesSecurity
+          #   parameters:
+          #     serviceName: checkmarx_sast_DST-RP_Convenience
+          #     projectName: $(Build.Repository.Name)
+          #     teamName: '/CxServer/bpgroup/InnovationAndEngineering/DigitalCustomersAndMarkets/ConsumerPlatformsB2cDigitalPortfolioDelivery/SiteExperienceAndConvenienceSeandC/MAndCConvenienceLegacy/RAndPStoreOperations'
+          #     preset: 'ASA-SDLC'
+          #     vulnerabilityThreshold: true 
+          #     syncMode: true
+          #     synchronise: true
+          #     targetBranch: refs/heads/develop
+          - template: /ADO/sca/steps/sca-template-step.yml@dses-sec-templates 
+            parameters:
+              scaProjectName: '$(Build.Repository.Name)'
+              scaTeamPath: '/CxServer/bpgroup/InnovationAndEngineering/DigitalCustomersAndMarkets/ConsumerPlatformsB2cDigitalPortfolioDelivery/B2cSiteExperienceAndConvenienceSeAndC/MAndCConvenienceLegacy'
+              scaServiceConnection: 'checkmarx_sca_DST-RP_Convenience'
+              scaThreshold: 'false' #true or false
+              scaHigh: '' #Number or High before breaking build
+              scaMedium: ''
+              scaLow: ''      
+
+          # SAM Build Stage
+          - script: sam build -b $(Build.ArtifactStagingDirectory)
+            displayName: "Build"
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: "$(Build.ArtifactStagingDirectory)"
+              ArtifactName: "BuildArtifact"
+              publishLocation: "Container"
