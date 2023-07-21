@@ -112,7 +112,7 @@ stages:
           #     scaLow: ''      
 
           # SAM Build Stage
-          - script: sam build -b $(Build.ArtifactStagingDirectory)
+          #- script: sam build -b $(Build.ArtifactStagingDirectory)
             displayName: "Build"
           - task: PublishBuildArtifacts@1
             inputs:
