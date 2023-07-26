@@ -9,7 +9,7 @@ import logging
 
 from aws_lambda_powertools import Logger
 
-from moto_test.src.motowrapper.context import TestEnvContext
+from src.aws_moto_wrapper.context import TestEnvContext
 
 
 @dataclass
