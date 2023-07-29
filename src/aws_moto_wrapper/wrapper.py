@@ -12,8 +12,8 @@ from yaml.loader import SafeLoader
 from moto import mock_sns, mock_sqs, mock_dynamodb2
 from dataclasses import dataclass, field
 
-from src.aws_moto_wrapper.context import TestEnvContext
-from src.aws_moto_wrapper.handler import env_creator, MotoWrapperContext
+from .context import TestEnvContext
+from .handler import env_creator, MotoWrapperContext
 
 from aws_lambda_powertools import Logger
 
