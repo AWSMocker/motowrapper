@@ -35,5 +35,5 @@ class TestEnvContext(object):
         cls.sqs_name_to_resource_map[sqs_name] = sqs_resource_obj
 
     @classmethod
-    def get_sns_resource(cls, sqs_name):
+    def get_sqs_resource(cls, sqs_name):
         return cls.sqs_name_to_resource_map.get(sqs_name)

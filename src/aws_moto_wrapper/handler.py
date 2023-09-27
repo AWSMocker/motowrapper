@@ -119,6 +119,7 @@ class SQSServiceHandler(AbstractServiceHandler):
             sqs_object = wrapper_context.sqs.create_queue(
                 QueueName=sqs_name
             )
+            TestEnvContext.set_sqs_resource(sqs_name=sqs_name, sqs_resource_obj=sqs_object)
             logging.info('SQS created ')
         print('SQS Handler')
 
@@ -126,7 +127,9 @@ class SQSServiceHandler(AbstractServiceHandler):
         sqs_envs = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
             .get(SQSServiceHandler.SQS_SERVICE_KEY, [])
         for env in sqs_envs:
-            print(env)
+            sqs_name = get_value_fail_if_null(env, SQSServiceHandler.SQS_NAME)
+            sqs_object = TestEnvContext.get_sqs_resource(sqs_name)
+            _validate_sqs_sns(sqs_name, moto_wrapper_context, env, sqs_object)
         print("sqs_envs handler")
 
 
@@ -231,6 +234,27 @@ def _generate_attribute_definition(attribute_definiton_name):
 
 logger = Logger(child=True)
 
+def _validate_sqs_sns(queue_name, moto_wrapper_context: MotoWrapperContext, env, sqs_object):
+    if sqs_object is None:
+        raise AssertionError(f'{queue_name} is not present in setup section')
+
+    records = get_value_fail_if_null(env, SNSServiceHandler.RECORD_PROP_KEY)
+    response = moto_wrapper_context.sqs.receive_message(QueueUrl=sqs_object['QueueUrl'],
+                                                        MaxNumberOfMessages=len(records),
+                                                        MessageAttributeNames=['All'],
+                                                        AttributeNames=['All'])
+    if 'Messages' not in response:
+        raise AssertionError(f'No messages published by {queue_name}')
+
+    acc_sns_body = [json.loads(msg['Body']) for msg in response['Messages']]
+    exp_sns_body = [json.loads(msg['Body']) for msg in records]
+    if len(acc_sns_body) != len(exp_sns_body):
+        raise AssertionError(f'For {queue_name}, expected number of messages are {len(exp_sns_body)}, found {len(acc_sns_body)}')
+    comp_result = pd.DataFrame(exp_sns_body).equals(pd.DataFrame(acc_sns_body))
+    if not comp_result:
+        raise AssertionError(f'For {queue_name} message not matched with expected, acc: {acc_sns_body}, exp: {exp_sns_body}')
+
+
 
 class SNSServiceHandler(AbstractServiceHandler):
     SNS_SERVICE_KEY = 'SNS'
@@ -281,29 +305,9 @@ class SNSServiceHandler(AbstractServiceHandler):
         sns_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
             .get(SNSServiceHandler.SNS_SERVICE_KEY, [])
         for env in sns_env:
-            print(env)
             sns_name = get_value_fail_if_null(env, SNSServiceHandler.SNS_NAME_PROP_KEY)
             sqs_object = TestEnvContext.get_sns_backed_sqs(sns_name=sns_name)
-            if sqs_object is None:
-                raise AssertionError(f'SNS is present in setup section {sns_name}')
-
-            records = get_value_fail_if_null(env, SNSServiceHandler.RECORD_PROP_KEY)
-
-            response = moto_wrapper_context.sqs.receive_message(QueueUrl=sqs_object['QueueUrl'],
-                                                                MaxNumberOfMessages=len(records),
-                                                                MessageAttributeNames=['All'],
-                                                                AttributeNames=['All'])
-            if 'Messages' not in response:
-                raise AssertionError(f'No messages published by SNS {sns_name}')
-
-            acc_sns_body = [json.loads(msg['Body']) for msg in response['Messages']]
-            exp_sns_body = [json.loads(msg['Body']) for msg in records]
-            if len(acc_sns_body)!= len(exp_sns_body):
-                raise AssertionError(f'For SNS: {sns_name}, expected number of messages are {len(exp_sns_body)}, found {len(acc_sns_body)}')
-            comp_result = pd.DataFrame(exp_sns_body).equals(pd.DataFrame(acc_sns_body))
-            if not comp_result:
-                raise AssertionError(f'For SNS: {sns_name} message not matched with expected, acc: {acc_sns_body}, exp: {exp_sns_body}')
-
+            _validate_sqs_sns(sns_name, moto_wrapper_context, env, sqs_object)
 
 class ValidationReport(object):
 
