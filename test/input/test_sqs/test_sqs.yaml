@@ -1,20 +1,49 @@
 setup:
     SQS:
-        - Name: bpDipDemo_Multi_msg.fifo
-        - Name: bpDipDemo_SingleMsg.fifo
-        - Name: bpDipDemo_MissingMsg.fifo
-        - Name: bpDipDemo_MessageCountNotMatched
-        - Name: bpDipDemo_MessageNotMatched
+        - Name: moto_test_multi_msg_sqs.fifo
+        - Name: moto_test_single_msg_sqs.fifo
+        - Name: moto_test_missing_msg_sqs.fifo
+        - Name: moto_test_message_count_not_matched_sqs
+        - Name: moto_test_message_not_matched_sqs
 validate:
     expectedTestResourceOutput:
       - name: 'multi_message_validate'
-        SNS:
-          - Name: bpDipDemo_Multi_msg.fifo
+        SQS:
+          - Name: moto_test_multi_msg_sqs.fifo
             records:
-            - Body: '{"key": "sns message 1", "bucket": "s3_bucket_name"}'
+            - Body: '{"key": "sqs message 1", "bucket": "s3_bucket_name"}'
               messageDeduplicationId: 3321-2221-3321-3211
               messageGroupId: 'GB:19'
-            - Body: '{"key": "sns message 2", "bucket": "s3_bucket_name"}'
+            - Body: '{"key": "sqs message 2", "bucket": "s3_bucket_name"}'
               messageDeduplicationId: 3321-2221-3321-3211
               messageGroupId: 'GB:19'
             customComparator: 'invoiceJsonComparator'
+
+      - name: 'single_message_validate'
+        SQS:
+          - Name: moto_test_single_msg_sqs.fifo
+            records:
+            - Body: '{"key": "Single message", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+
+      - name: 'missing_message_validate_sqs'
+        SQS:
+          - Name: moto_test_missing_msg_sqs.fifo
+            records:
+            - Body: '{"key": "no message published", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+
+      - name: 'mess_count_not_matched'
+        SQS:
+          - Name: moto_test_message_count_not_matched_sqs
+            records:
+            - Body: '{"key": "msg 1", "bucket": "s3_bucket_name"}'
+            - Body: '{"key": "msg 2", "bucket": "s3_bucket_name"}'
+
+      - name: 'mess_not_matched'
+        SQS:
+          - Name: moto_test_message_not_matched_sqs
+            records:
+            - Body: '{"key": "msg 1", "bucket": "s3_bucket_name"}'
