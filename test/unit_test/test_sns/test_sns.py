@@ -9,7 +9,7 @@ from src.aws_moto_wrapper.wrapper import AWSResourceInitializer
 
 logger = Logger()
 
-def test_moto_read_s3(test_manager, sns_mock, sqs_mock):
+def test_moto_read_sns(test_manager, sns_mock, sqs_mock):
 
     res_out_validator = test_manager.mock_env('test/input/test_sns/test_sns.yaml')
 
@@ -22,7 +22,6 @@ def test_moto_read_s3(test_manager, sns_mock, sqs_mock):
                      MessageGroupId='3321-2221-3321-3212', MessageDeduplicationId='1')
     logger.info("Message has been sent")
 
-
     res_out_validator.validate_out('multi_message_validate')
 
 
@@ -33,7 +32,6 @@ def test_moto_sns_single_message_lambda(test_manager, sns_mock, sqs_mock):
                      Message='{"key": "Single message", "bucket": "s3_bucket_name"}',
                      MessageGroupId='3321-2221-3321-3211',MessageDeduplicationId='1')
     logger.info("Message has been sent")
-
 
     res_out_validator.validate_out('single_message_validate')
 

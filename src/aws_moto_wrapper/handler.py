@@ -129,7 +129,7 @@ class SQSServiceHandler(AbstractServiceHandler):
         for env in sqs_envs:
             sqs_name = get_value_fail_if_null(env, SQSServiceHandler.SQS_NAME)
             sqs_object = TestEnvContext.get_sqs_resource(sqs_name)
-            _validate_sqs_sns(sqs_name, moto_wrapper_context, env, sqs_object)
+            _validate_sqs(sqs_name, moto_wrapper_context, env, sqs_object)
         print("sqs_envs handler")
 
 
@@ -169,12 +169,13 @@ class DynamodbServiceHandler(AbstractServiceHandler):
         dynamodb_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
             .get(DynamodbServiceHandler.DYNAMODB_SERVICE_KEY, [])
         for env in dynamodb_env:
-            print(env)
+            # table_name = env.get('Name')
+            # for files in env.get('files'):
+            pass
         print("dynamodb_env handler")
 
 
 class EnvCreator(object):
-
     def __init__(self, initiator_handler: AbstractServiceHandler):
         self.initiator_handler = initiator_handler
 
@@ -234,7 +235,7 @@ def _generate_attribute_definition(attribute_definiton_name):
 
 logger = Logger(child=True)
 
-def _validate_sqs_sns(queue_name, moto_wrapper_context: MotoWrapperContext, env, sqs_object):
+def _validate_sqs(queue_name, moto_wrapper_context: MotoWrapperContext, env, sqs_object):
     if sqs_object is None:
         raise AssertionError(f'{queue_name} is not present in setup section')
 
@@ -307,7 +308,7 @@ class SNSServiceHandler(AbstractServiceHandler):
         for env in sns_env:
             sns_name = get_value_fail_if_null(env, SNSServiceHandler.SNS_NAME_PROP_KEY)
             sqs_object = TestEnvContext.get_sns_backed_sqs(sns_name=sns_name)
-            _validate_sqs_sns(sns_name, moto_wrapper_context, env, sqs_object)
+            _validate_sqs(sns_name, moto_wrapper_context, env, sqs_object)
 
 class ValidationReport(object):
 
