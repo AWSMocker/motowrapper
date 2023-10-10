@@ -7,19 +7,25 @@ from dataclasses import dataclass
 
 import logging
 
+from aws_lambda_powertools import Logger
+
+from moto_test.src.motowrapper.context import TestEnvContext
+
 
 @dataclass
-class WrapperContext(object):
+class MotoWrapperContext(object):
     sqs = None
     s3 = None
+    sns = None
     dynamodb = None
     env_in_json = None
 
-    def __init__(self, sqs, s3, dynamodb, env_in_json):
+    def __init__(self, sqs, s3, dynamodb, sns, env_in_json):
         self.sqs = sqs
         self.s3 = s3
         self.dynamodb = dynamodb
         self.env_in_json = env_in_json
+        self.sns = sns
 
 
 class AbstractHandler(ABC):
@@ -29,11 +35,10 @@ class AbstractHandler(ABC):
         self.next_handler = next_handler
         pass
 
-    def prepare(self, wrapper_context: WrapperContext):
+    def prepare(self, wrapper_context: MotoWrapperContext):
         self.handler(wrapper_context)
 
-    @abstractmethod
-    def handler(self, wrapper_context: WrapperContext):
+    def handler(self, wrapper_context: MotoWrapperContext):
         pass
 
 
@@ -45,7 +50,7 @@ class S3Handler(AbstractHandler):
     def __init__(self, next_handler):
         super().__init__(next_handler)
 
-    def handler(self, wrapper_context: WrapperContext):
+    def handler(self, wrapper_context: MotoWrapperContext):
         s3_envs = wrapper_context.env_in_json[S3Handler.S3_SERVICE_KEY]
         for env in s3_envs:
             bucket_name = env.get(S3Handler.S3_BUCKET_NAME)
@@ -60,16 +65,18 @@ class S3Handler(AbstractHandler):
                                   file.get('localFile'))
         print("s3 handler")
 
+
 class SQSHandler(AbstractHandler):
     SQS_SERVICE_KEY = 'SQS'
     SQS_NAME = 'Name'
+
     def _get_service_tag(self):
         return 'SQS'
 
     def __init__(self, next_handler):
         super().__init__(next_handler)
 
-    def handler(self, wrapper_context: WrapperContext):
+    def handler(self, wrapper_context: MotoWrapperContext):
         sqs_envs = wrapper_context.env_in_json[SQSHandler.SQS_SERVICE_KEY]
         for env in sqs_envs:
             sqs_name = env.get(SQSHandler.SQS_NAME)
@@ -90,7 +97,7 @@ class DynamodbHandler(AbstractHandler):
     def __init__(self, next_handler):
         super().__init__(next_handler)
 
-    def handler(self, wrapper_context: WrapperContext):
+    def handler(self, wrapper_context: MotoWrapperContext):
         dynamodb_envs = wrapper_context.env_in_json[DynamodbHandler.DYNAMODB_SERVICE_KEY]
         for env in dynamodb_envs:
             table_name = env.get(DynamodbHandler.TABLE_NAME)
@@ -98,23 +105,23 @@ class DynamodbHandler(AbstractHandler):
             attribute_definiton_name = env.get(DynamodbHandler.ATTRIBUTE_DEFINITION_NAME)
             wrapper_context.dynamodb.create_table(
                 TableName=table_name,
-                KeySchema= _generate_key_schema(key_schema_name),
-                AttributeDefinitions = _generate_attribute_definition(attribute_definiton_name)
+                KeySchema=_generate_key_schema(key_schema_name),
+                AttributeDefinitions=_generate_attribute_definition(attribute_definiton_name)
             )
             logging.info('DynamoDB Table has been created ')
         print('Dyanmodb Handler')
+
 
 class EnvCreator(object):
 
     def __init__(self, initiator_handler: AbstractHandler):
         self.initiator_handler = initiator_handler
 
-    def prepare_env(self, wrapper_context: WrapperContext):
+    def prepare_env(self, wrapper_context: MotoWrapperContext):
         current_handler = self.initiator_handler
         while current_handler:
             current_handler.prepare(wrapper_context)
             current_handler = current_handler.next_handler
-
 
 
 def _from_local_to_s3(s3, bucket_name, key_name,
@@ -127,6 +134,7 @@ def _from_local_to_s3(s3, bucket_name, key_name,
             Key=key_name
         )
 
+
 def _generate_key_schema(key_schema_name):
     key_schema = []
     for itr in key_schema_name:
@@ -135,6 +143,7 @@ def _generate_key_schema(key_schema_name):
         schema['KeyType'] = itr.get('KeyType')
         key_schema.append(schema)
     return key_schema
+
 
 def _generate_attribute_definition(attribute_definiton_name):
     attr_definition = []
@@ -145,7 +154,56 @@ def _generate_attribute_definition(attribute_definiton_name):
         attr_definition.append(definition)
     return attr_definition
 
+
+logger = Logger(child=True)
+
+
+class SNSHandler(AbstractHandler):
+    SQS_SERVICE_KEY = 'SNS'
+    SNS_NAME_PROP_KEY = 'Name'
+
+    def _get_service_tag(self):
+        return 'SQS'
+
+    def __init__(self, next_handler):
+        super().__init__(next_handler)
+
+    def handler(self, wrapper_context: MotoWrapperContext):
+        sns_envs = wrapper_context.env_in_json[SNSHandler.SQS_SERVICE_KEY]
+        for env in sns_envs:
+            sns_name = env.get(SNSHandler.SNS_NAME_PROP_KEY)
+
+            # create fifo sns topic using boto3
+
+            is_fifo = sns_name.lower().endswith('.fifo')
+            sns_attributes = {"FifoTopic": str(is_fifo)}
+            sns_obj = wrapper_context.sns.create_topic(
+                Name=sns_name,
+                Attributes=sns_attributes
+
+            )
+
+            TestEnvContext.set_sns_resource(sns_name=sns_name, sns_resource_obj=sns_obj)
+
+            # create sqs queue and scubscribe to sns
+            sqs_name = ''.join([sns_name, '_queue']) if is_fifo is False else ''.join(
+                [sns_name.split('.')[0], '_queue', '.fifo'])
+            sqs_attributes = {"FifoTopic": str(is_fifo)}
+            sqs_obj = wrapper_context.sqs.create_queue(QueueName=sqs_name, Attributes= sqs_attributes)
+            sqs_arn = wrapper_context.sqs.get_queue_attributes(QueueUrl= sqs_obj['QueueUrl'], AttributeNames=['QueueArn'])
+            wrapper_context.sns.subscribe(
+                TopicArn=sns_obj['TopicArn'],
+                Protocol='sqs',
+                Endpoint=sqs_arn['Attributes']['QueueArn']
+            )
+            TestEnvContext.set_sns_backed_sqs(sns_name=sns_name, sqs_res_obj=sqs_obj)
+
+            logger.info('SNS created ')
+        logger.info('SNS Handler')
+
+
 sqs_handler = SQSHandler(None)
 s3_handler = S3Handler(sqs_handler)
 dynamodb_handler = DynamodbHandler(s3_handler)
-env_creator = EnvCreator(dynamodb_handler)
+sns_handler = SNSHandler(None)
+env_creator = EnvCreator(sns_handler)

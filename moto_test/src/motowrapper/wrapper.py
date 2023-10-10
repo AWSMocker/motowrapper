@@ -11,11 +11,14 @@ from moto import mock_s3
 from yaml.loader import SafeLoader
 from moto import mock_sns, mock_sqs, mock_dynamodb2
 from dataclasses import dataclass, field
-from moto_test.src.motowrapper.handler import env_creator, WrapperContext
+
+from moto_test.src.motowrapper.context import TestEnvContext
+from moto_test.src.motowrapper.handler import env_creator, MotoWrapperContext
 
 from aws_lambda_powertools import Logger
 
 logger = Logger()
+
 
 # Open the file and load the file
 def __convert_to_json(file_location):
@@ -23,12 +26,13 @@ def __convert_to_json(file_location):
         return yaml.load(f, Loader=SafeLoader)
 
 
-def __mock_env(sqs, s3, dynamodb, env_detail, file_type='yaml'):
+def __mock_env(sqs, s3, dynamodb, sns_mock, env_detail, file_type='yaml'):
     json_stack = __jsonfy_evn_details(env_detail, file_type)
 
     setup_list = json_stack.get("setup")
 
-    env_creator.prepare_env(WrapperContext(sqs=sqs, s3=s3, dynamodb=dynamodb, env_in_json=setup_list))
+    env_creator.prepare_env(MotoWrapperContext(sqs=sqs, s3=s3, dynamodb=dynamodb, env_in_json=setup_list
+                                               , sns=sns_mock))
     s3.create_bucket(
         Bucket='Bucket'
     )
@@ -64,13 +68,13 @@ def __jsonfy_evn_details(env_detail, file_type):
 #     print("Test", file_content)
 
 
-@pytest.fixture(scope="module")
-def moto_wrapper(sqs_mock, s3_mock, dynamodb_mock):
+@pytest.fixture(scope="function")
+def moto_wrapper(sqs_mock, s3_mock, dynamodb_mock, sns_mock):
     print('moto_wrapper')
-    return partial(__mock_env, sqs_mock, s3_mock, dynamodb_mock)
+    return partial(__mock_env, sqs_mock, s3_mock, dynamodb_mock, sns_mock)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def s3_mock():
     with mock_s3():
         print("\n S3 Up....")
@@ -78,7 +82,7 @@ def s3_mock():
         print("\n S3 Down....")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def sqs_mock():
     with mock_sqs():
         print("\n SQS Up....")
@@ -86,12 +90,20 @@ def sqs_mock():
         print("\n SQS Down....")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def dynamodb_mock():
     with mock_dynamodb2():
         print("\n dynamoDB Up....")
         yield boto3.client("dynamodb")
         print("\n dynamoDB Down....")
+
+
+@pytest.fixture(scope="function")
+def sns_mock():
+    with mock_sns():
+        print("\n SNS Up....")
+        yield boto3.client("sns")
+        print("\n SNS  Down....")
 
 
 def test_moto_lambda(moto_wrapper, s3_mock):
@@ -105,19 +117,32 @@ def test_moto_lambda(moto_wrapper, s3_mock):
 
     file_content = file_content["Body"].read().decode("utf-8")
     print("Test", file_content)
-    assert 2==200
 
 
 def test_moto_sqs_lambda(moto_wrapper, sqs_mock):
     moto_wrapper('moto_test/test.yaml')
-    sqs_mock.send_message(QueueUrl = 'bp.dip.demo.fifo',
-            MessageBody = json.dumps("Hi... Message had received successfully"))
+    sqs_mock.send_message(QueueUrl='bp.dip.demo.fifo',
+                          MessageBody=json.dumps("Hi... Message had received successfully"))
     logger.info("Message has been sent")
 
     response = sqs_mock.receive_message(QueueUrl='bp.dip.demo.fifo')
     received_json = response["Messages"][0]["Body"]
     logger.info(received_json)
-    assert 2==200
+
+
+def test_moto_sns_lambda(moto_wrapper, sns_mock, sqs_mock):
+    moto_wrapper('moto_test/test.yaml')
+    sns_obj = TestEnvContext.get_sns_resource('bpDipDemo_sns.fifo')
+    msg = "Hi... Message had received successfully"
+    sns_mock.publish(TopicArn=sns_obj['TopicArn'],
+                     Message=msg)
+    logger.info("Message has been sent")
+
+    sqs_object = TestEnvContext.get_backed_sqs('bpDipDemo_sns.fifo')
+    response = sqs_mock.receive_message(QueueUrl=sqs_object['QueueUrl'])
+    received_json = response["Messages"][0]["Body"]
+    assert json.loads(received_json)['Message'] == msg
+    logger.info(received_json)
 
 
 def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
@@ -125,8 +150,8 @@ def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
     dynamodb_mock.put_item(
         TableName='dynamodb_table_name',
         Item={
-            'source_sys_name':{'S':'ODP'},
-            'value':{'S':'20'}
+            'source_sys_name': {'S': 'ODP'},
+            'value': {'S': '20'}
         }
     )
     logger.info("Item has successfully added to dynamodb table")
@@ -137,4 +162,3 @@ def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
     )
     logger.info("Successfully read item from dynamodb table")
     print(response)
-    assert 2==200
