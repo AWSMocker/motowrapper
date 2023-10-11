@@ -1,0 +1,28 @@
+setup:
+    S3:
+      - bucketName: dip-sfg-integration-bucket
+        files:
+        - localFile: test/input/product_config.xml
+          s3FileName: inbound/producteso-au/product_config.xml
+        - localFile: test/input/site_lookup.json
+          s3FileName: inbound/producteso-au/site_lookup.json
+      - bucketName: dip-single-file-bucket
+        files:
+        - localFile: test/input/lookup.csv
+          s3FileName: mock/input/lookup.csv
+validate:
+    expectedTestResourceOutput:
+      - name: 'single_file'
+        S3:
+        - bucketName: dip-single-file-bucket
+          files:
+            - localFile: test/input/lookup.csv
+              s3FileName: mock/input/lookup.csv
+      - name: 'multiple_file'
+        S3:
+        - bucketName: dip-sfg-integration-bucket
+          files:
+          - localFile: test/input/product_config.xml
+            s3FileName: inbound/producteso-au/product_config.xml
+          - localFile: test/input/site_lookup.json
+            s3FileName: inbound/producteso-au/site_lookup.json
