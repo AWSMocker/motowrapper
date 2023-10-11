@@ -1,0 +1,59 @@
+setup:
+    SNS:
+        - Name: bpDipDemo_Multi_msg.fifo
+        - Name: bpDipDemo_SingleMsg.fifo
+        - Name: bpDipDemo_MissingMsg.fifo
+        - Name: bpDipDemo_MessageCountNotMatched
+        - Name: bpDipDemo_MessageNotMatched
+validate:
+    global:
+        SNS:
+          messageAttributes:
+            - name: market
+            - type: String
+            - value: GB
+        DynamoDB:
+          - Name: dynamodb_table_name
+          - Key:
+            - name: source_sys_name
+            - type: String
+            - value: 'DIP'
+    expectedTestResourceOutput:
+      - name: 'multi_message_validate'
+        SNS:
+          - Name: bpDipDemo_Multi_msg.fifo
+            records:
+            - Body: '{"key": "sns message 1", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+            - Body: '{"key": "sns message 2", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+            customComparator: 'invoiceJsonComparator'
+      - name: 'single_message_validate'
+
+        SNS:
+          - Name: bpDipDemo_SingleMsg.fifo
+            records:
+            - Body: '{"key": "Single message", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+      - name: 'missing_message_validate'
+
+        SNS:
+          - Name: bpDipDemo_MissingMsg.fifo
+            records:
+            - Body: '{"key": "Single message", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+      - name: 'mess_count_not_matched'
+        SNS:
+          - Name: bpDipDemo_MessageCountNotMatched
+            records:
+            - Body: '{"key": "msg 1", "bucket": "s3_bucket_name"}'
+            - Body: '{"key": "msg 2", "bucket": "s3_bucket_name"}'
+      - name: 'mess_not_matched'
+        SNS:
+          - Name: bpDipDemo_MessageNotMatched
+            records:
+            - Body: '{"key": "msg 1", "bucket": "s3_bucket_name"}'

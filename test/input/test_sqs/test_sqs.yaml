@@ -1,0 +1,20 @@
+setup:
+    SQS:
+        - Name: bpDipDemo_Multi_msg.fifo
+        - Name: bpDipDemo_SingleMsg.fifo
+        - Name: bpDipDemo_MissingMsg.fifo
+        - Name: bpDipDemo_MessageCountNotMatched
+        - Name: bpDipDemo_MessageNotMatched
+validate:
+    expectedTestResourceOutput:
+      - name: 'multi_message_validate'
+        SNS:
+          - Name: bpDipDemo_Multi_msg.fifo
+            records:
+            - Body: '{"key": "sns message 1", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+            - Body: '{"key": "sns message 2", "bucket": "s3_bucket_name"}'
+              messageDeduplicationId: 3321-2221-3321-3211
+              messageGroupId: 'GB:19'
+            customComparator: 'invoiceJsonComparator'

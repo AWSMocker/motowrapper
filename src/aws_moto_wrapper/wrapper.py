@@ -10,9 +10,8 @@ from dacite import from_dict
 from moto import mock_s3
 from yaml.loader import SafeLoader
 from moto import mock_sns, mock_sqs, mock_dynamodb2
-from dataclasses import dataclass, field
 
-from .context import TestEnvContext
+
 from .handler import env_creator, MotoWrapperContext
 
 from aws_lambda_powertools import Logger
@@ -37,25 +36,6 @@ def jsonfy_evn_details(env_detail, file_type):
         with open(env_detail) as f:
             json_stack = json.load(f)
     return json_stack
-
-
-# @pytest.fixture(scope="module")
-# def moto_wrapper(mock_sqs, mock_s3, mock_dynamodb2):
-#     logger.info('moto_wrapper')
-#     return partial(__mock_env, mock_sqs, mock_s3, mock_dynamodb2)
-
-
-# def test_moto_lambda(moto_wrapper, mock_s3):
-#     moto_wrapper('test.yaml')
-#     mock_s3.put_object(
-#         Body='This is daya',
-#         Bucket='Bucket',
-#         Key='/tmp/data/abc.txt'
-#     )
-#     file_content = mock_s3.get_object(Bucket='Bucket', Key='/tmp/data/abc.txt')
-
-#     file_content = file_content["Body"].read().decode("utf-8")
-#     logger.info("Test", file_content)
 
 
 @pytest.fixture(scope="function")
@@ -137,7 +117,7 @@ def test_manager(sqs_mock, s3_mock, dynamodb_mock, sns_mock):
 
 
 def test_moto_sqs_lambda(test_manager, sqs_mock):
-    res_out_validator = test_manager.mock_env('moto_test/test.yaml')
+    res_out_validator = test_manager.mock_env('src/test.yaml')
 
     sqs_mock.send_message(QueueUrl='bp.dip.demo.fifo',
                           MessageBody=json.dumps("Hi... Message had received successfully"))
@@ -149,23 +129,9 @@ def test_moto_sqs_lambda(test_manager, sqs_mock):
     res_out_validator.validate_out('validate_dc_event')
 
 
-def test_moto_sns_lambda(test_manager, sns_mock, sqs_mock):
-    test_manager.mock_env('moto_test/test.yaml')
-    sns_obj = TestEnvContext.get_sns_resource('bpDipDemo_sns.fifo')
-    msg = "Hi... Message had received successfully"
-    sns_mock.publish(TopicArn=sns_obj['TopicArn'],
-                     Message=msg)
-    logger.info("Message has been sent")
-
-    sqs_object = TestEnvContext.get_backed_sqs('bpDipDemo_sns.fifo')
-    response = sqs_mock.receive_message(QueueUrl=sqs_object['QueueUrl'])
-    received_json = response["Messages"][0]["Body"]
-    assert json.loads(received_json)['Message'] == msg
-    logger.info(received_json)
-
 
 def test_moto_dynamodb_lambda(test_manager, dynamodb_mock):
-    test_manager.mock_env('moto_test/test.yaml')
+    test_manager.mock_env('src/test.yaml')
     dynamodb_table = dynamodb_mock.Table('dynamodb_table_name')
     dynamodb_table.put_item(
         Item={

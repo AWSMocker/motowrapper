@@ -1,6 +1,8 @@
 import abc
+import json
 from abc import ABC, abstractmethod
-
+from pandas import DataFrame
+import pandas as pd
 import io
 
 from dataclasses import dataclass
@@ -12,6 +14,13 @@ from aws_lambda_powertools import Logger
 from .context import TestEnvContext
 
 
+def get_value_fail_if_null(payload, key):
+    value = payload.get(key, None)
+    if value is None:
+        raise ValueError(f'Key {key} not found is required ')
+    return value
+
+
 @dataclass
 class MotoWrapperContext(object):
     sqs = None
@@ -20,7 +29,7 @@ class MotoWrapperContext(object):
     dynamodb = None
     env_in_json = None
 
-    def __init__(self, sqs, s3, dynamodb, sns, env_in_json, test_name_to_exp_res,global_config):
+    def __init__(self, sqs, s3, dynamodb, sns, env_in_json, test_name_to_exp_res, global_config):
         self.sqs = sqs
         self.s3 = s3
         self.dynamodb = dynamodb
@@ -28,7 +37,6 @@ class MotoWrapperContext(object):
         self.sns = sns
         self.test_name_to_exp_res = test_name_to_exp_res
         self.global_config = global_config
-
 
 
 class AbstractServiceHandler(ABC):
@@ -41,9 +49,8 @@ class AbstractServiceHandler(ABC):
     def prepare_env(self, wrapper_context: MotoWrapperContext):
         pass
 
-    def validate_resource(self, wrapper_context: MotoWrapperContext, exp_resources_key_name:str):
+    def validate_resource(self, wrapper_context: MotoWrapperContext, exp_resources_key_name: str):
         pass
-
 
 class S3ServiceHandler(AbstractServiceHandler):
     S3_SERVICE_KEY = 'S3'
@@ -75,7 +82,6 @@ class S3ServiceHandler(AbstractServiceHandler):
             print(env)
         print("s3 handler")
 
-
 class SQSServiceHandler(AbstractServiceHandler):
     SQS_SERVICE_KEY = 'SQS'
     SQS_NAME = 'Name'
@@ -87,21 +93,23 @@ class SQSServiceHandler(AbstractServiceHandler):
         super().__init__(next_handler)
 
     def prepare_env(self, wrapper_context: MotoWrapperContext):
-        sqs_envs = wrapper_context.env_in_json[SQSServiceHandler.SQS_SERVICE_KEY]
+        sqs_envs = wrapper_context.env_in_json.get(SQSServiceHandler.SQS_SERVICE_KEY,[])
         for env in sqs_envs:
             sqs_name = env.get(SQSServiceHandler.SQS_NAME)
 
-            wrapper_context.sqs.create_queue(
+            sqs_object = wrapper_context.sqs.create_queue(
                 QueueName=sqs_name
             )
             logging.info('SQS created ')
         print('SQS Handler')
-    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name:str):
-        sqs_envs = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name]\
-                                        .get(SQSServiceHandler.SQS_SERVICE_KEY, [])
+
+    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name: str):
+        sqs_envs = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
+            .get(SQSServiceHandler.SQS_SERVICE_KEY, [])
         for env in sqs_envs:
             print(env)
         print("sqs_envs handler")
+
 
 class DynamodbServiceHandler(AbstractServiceHandler):
     DYNAMODB_SERVICE_KEY = 'DynamoDB'
@@ -115,7 +123,7 @@ class DynamodbServiceHandler(AbstractServiceHandler):
         super().__init__(next_handler)
 
     def prepare_env(self, wrapper_context: MotoWrapperContext):
-        dynamodb_envs = wrapper_context.env_in_json[DynamodbServiceHandler.DYNAMODB_SERVICE_KEY]
+        dynamodb_envs = wrapper_context.env_in_json.get(DynamodbServiceHandler.DYNAMODB_SERVICE_KEY, [])
         for env in dynamodb_envs:
             table_name = env.get(DynamodbServiceHandler.TABLE_NAME)
             key_schema_name = env.get(DynamodbServiceHandler.KEY_SCHEMA_NAME)
@@ -135,12 +143,13 @@ class DynamodbServiceHandler(AbstractServiceHandler):
                                         file.get('SourceType'), file.get('localFile'))
         print('Dyanmodb Handler')
 
-    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name:str):
-        dynamodb_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name]\
-                                        .get(DynamodbServiceHandler.DYNAMODB_SERVICE_KEY, [])
+    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name: str):
+        dynamodb_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
+            .get(DynamodbServiceHandler.DYNAMODB_SERVICE_KEY, [])
         for env in dynamodb_env:
             print(env)
         print("dynamodb_env handler")
+
 
 class EnvCreator(object):
 
@@ -207,6 +216,7 @@ logger = Logger(child=True)
 class SNSServiceHandler(AbstractServiceHandler):
     SNS_SERVICE_KEY = 'SNS'
     SNS_NAME_PROP_KEY = 'Name'
+    RECORD_PROP_KEY = 'records'
 
     def _get_service_tag(self):
         return 'SQS'
@@ -215,7 +225,7 @@ class SNSServiceHandler(AbstractServiceHandler):
         super().__init__(next_handler)
 
     def prepare_env(self, wrapper_context: MotoWrapperContext):
-        sns_envs = wrapper_context.env_in_json[SNSServiceHandler.SNS_SERVICE_KEY]
+        sns_envs = wrapper_context.env_in_json.get(SNSServiceHandler.SNS_SERVICE_KEY, [])
         for env in sns_envs:
             sns_name = env.get(SNSServiceHandler.SNS_NAME_PROP_KEY)
 
@@ -240,19 +250,51 @@ class SNSServiceHandler(AbstractServiceHandler):
             wrapper_context.sns.subscribe(
                 TopicArn=sns_obj['TopicArn'],
                 Protocol='sqs',
-                Endpoint=sqs_arn['Attributes']['QueueArn']
+                Endpoint=sqs_arn['Attributes']['QueueArn'],
+                Attributes={'RawMessageDelivery': 'true'}
             )
             TestEnvContext.set_sns_backed_sqs(sns_name=sns_name, sqs_res_obj=sqs_obj)
 
             logger.info('SNS created ')
         logger.info('SNS Handler')
 
-    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name:str):
-        sns_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name]\
-                                        .get(SNSServiceHandler.SNS_SERVICE_KEY, [])
+    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name: str):
+        sns_env = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
+            .get(SNSServiceHandler.SNS_SERVICE_KEY, [])
         for env in sns_env:
             print(env)
-        print("sns_env handler")
+            sns_name = get_value_fail_if_null(env, SNSServiceHandler.SNS_NAME_PROP_KEY)
+            sqs_object = TestEnvContext.get_sns_backed_sqs(sns_name=sns_name)
+            if sqs_object is None:
+                raise AssertionError(f'SNS is present in setup section {sns_name}')
+
+            records = get_value_fail_if_null(env, SNSServiceHandler.RECORD_PROP_KEY)
+
+            response = moto_wrapper_context.sqs.receive_message(QueueUrl=sqs_object['QueueUrl'],
+                                                                MaxNumberOfMessages=len(records),
+                                                                MessageAttributeNames=['All'],
+                                                                AttributeNames=['All'])
+            if 'Messages' not in response:
+                raise AssertionError(f'No messages published by SNS {sns_name}')
+
+            acc_sns_body = [json.loads(msg['Body']) for msg in response['Messages']]
+            exp_sns_body = [json.loads(msg['Body']) for msg in records]
+            if len(acc_sns_body)!= len(exp_sns_body):
+                raise AssertionError(f'For SNS: {sns_name}, expected number of messages are {len(exp_sns_body)}, found {len(acc_sns_body)}')
+            comp_result = pd.DataFrame(exp_sns_body).equals(pd.DataFrame(acc_sns_body))
+            if not comp_result:
+                raise AssertionError(f'For SNS: {sns_name} message not matched with expected, acc: {acc_sns_body}, exp: {exp_sns_body}')
+
+
+class ValidationReport(object):
+
+    def __init__(self, test_name):
+        self.test_name = test_name
+        self.errors = []
+
+    def assert_report(self):
+        if self.errors:
+            raise AssertionError(self.errors)
 
 
 sqs_handler = SQSServiceHandler(None)

@@ -2,13 +2,13 @@ setup:
     S3:
       - bucketName: dip-sfg-integration-bucket
         files:
-        - localFile: moto_test/test/input/product_config.xml
+        - localFile: test/input/product_config.xml
           s3FileName: inbound/producteso-au/product_config.xml
-        - localFile: moto_test/test/input/site_lookup.json
+        - localFile: test/input/site_lookup.json
           s3FileName: inbound/producteso-au/site_lookup.json
       - bucketName: static_bucket
         files:
-        - localFile: moto_test/test/input/lookup.csv
+        - localFile: test/input/lookup.csv
           s3FileName: mock/input/lookup.csv
     SQS:
         - Name:  bp.dip.demo.fifo
@@ -32,7 +32,7 @@ setup:
       # Code for below
         InitialLoad:
           - SourceType: 'local'
-            localFile: moto_test/test/input/initial_load.csv
+            localFile: test/input/initial_load.csv
         GlobalSecondaryIndexes:
           - IndexName: "secondary_index"
             KeySchema:
@@ -63,16 +63,16 @@ validate:
           - localFile: test/output/product_config.xml
             s3FileName: inbound/producteso-au/product_config.xml
         SNS:
-          - Name: bp.dip.demo_sns.fifo
-          - records:
-            - body:
-                payload: "{'key': 'name', 'bucket': s3_bucket_name}"
-                messageDeduplicationId: 3321-2221-3321-3211
-                messageGroupId: 'GB:19'
-            - body:
-                payload: "{'key': 'name', 'bucket': s3_bucket_name}"
-                messageDeduplicationId: 3321-2221-3321-3211
-                messageGroupId: 'GB:19'
+          - Name: bpDipDemo_sns.fifo
+            records:
+              - body:
+                  payload: "{'key': 'name', 'bucket': s3_bucket_name}"
+                  messageDeduplicationId: 3321-2221-3321-3211
+                  messageGroupId: 'GB:19'
+              - body:
+                  payload: "{'key': 'name', 'bucket': s3_bucket_name}"
+                  messageDeduplicationId: 3321-2221-3321-3211
+                  messageGroupId: 'GB:19'
       - name: 'invalid_validate_dc_event'
         S3:
         - name: dip-sfg-integration-bucket
@@ -80,7 +80,7 @@ validate:
           - localFile: test/output/product_config.xml
             s3FileName: inbound/producteso-au/product_config.xml
         SNS:
-          - Name: bp.dip.demo_sns.fifo
+          - Name: bpDipDemo_sns.fifo
           - records:
             - body:
                 payload: "{'key': 'name', 'bucket': s3_bucket_name}"
