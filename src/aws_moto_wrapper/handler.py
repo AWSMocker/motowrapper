@@ -61,7 +61,7 @@ class S3ServiceHandler(AbstractServiceHandler):
         super().__init__(next_handler)
 
     def prepare_env(self, wrapper_context: MotoWrapperContext):
-        s3_envs = wrapper_context.env_in_json[S3ServiceHandler.S3_SERVICE_KEY]
+        s3_envs = wrapper_context.env_in_json.get(S3ServiceHandler.S3_SERVICE_KEY,[])
         for env in s3_envs:
             bucket_name = env.get(S3ServiceHandler.S3_BUCKET_NAME)
 
@@ -75,12 +75,31 @@ class S3ServiceHandler(AbstractServiceHandler):
                                   file.get('localFile'))
         print("s3 handler")
 
-    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name:str):
-        s3_envs = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name]\
-                        .get(S3ServiceHandler.S3_SERVICE_KEY, [])
+    def validate_resource(self, moto_wrapper_context: MotoWrapperContext, exp_resources_key_name: str):
+        s3_envs = moto_wrapper_context.test_name_to_exp_res[exp_resources_key_name] \
+            .get(S3ServiceHandler.S3_SERVICE_KEY, [])
         for env in s3_envs:
-            print(env)
+            bucket = env.get('bucketName')
+            for files in env.get('files'):
+                local_file = files.get('localFile')
+                s3_file_name = files.get('s3FileName')
+                logger.debug(f"Validating bucket:{bucket}, s3 file: {s3_file_name}, local file{local_file}")
+                self.__validate_s3_file_to_local(moto_wrapper_context, bucket=bucket,
+                                             local_file_loc=local_file,
+                                                 s3_key=s3_file_name)
+                logger.debug("validation completed")
         print("s3 handler")
+
+    def __validate_s3_file_to_local(self,wrapper_context: MotoWrapperContext, bucket, s3_key, local_file_loc):
+        s3_data = wrapper_context.s3.get_object(
+            Bucket=bucket,
+            Key=s3_key
+        )
+        #TODO: ecoding should come from yaml
+        acc = s3_data["Body"].read().decode("utf-8")
+        with io.open(local_file_loc, "r", encoding='utf-8') as read_file:
+            expected = read_file.read()
+        assert expected == acc, f"File content of S3 {s3_key} does not match with local file {local_file_loc}"
 
 class SQSServiceHandler(AbstractServiceHandler):
     SQS_SERVICE_KEY = 'SQS'
