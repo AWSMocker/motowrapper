@@ -26,21 +26,11 @@ def __convert_to_json(file_location):
         return yaml.load(f, Loader=SafeLoader)
 
 
-def __mock_env(sqs, s3, dynamodb, sns_mock, env_detail, file_type='yaml'):
-    json_stack = __jsonfy_evn_details(env_detail, file_type)
-
-    setup_list = json_stack.get("setup")
-
-    env_creator.prepare_env(MotoWrapperContext(sqs=sqs, s3=s3, dynamodb=dynamodb, env_in_json=setup_list
-                                               , sns=sns_mock))
-    s3.create_bucket(
-        Bucket='Bucket'
-    )
-    print('__create_json_dict down')
-    return "json_stack"
+def __validate(sqs, s3, dynamodb, sns_mock, env_detail, json_stack, file_type='yaml'):
+    logger.info('Validting.......')
 
 
-def __jsonfy_evn_details(env_detail, file_type):
+def jsonfy_evn_details(env_detail, file_type):
     if file_type.lower() == "yaml":
         json_stack = __convert_to_json(env_detail)
     else:
@@ -51,7 +41,7 @@ def __jsonfy_evn_details(env_detail, file_type):
 
 # @pytest.fixture(scope="module")
 # def moto_wrapper(mock_sqs, mock_s3, mock_dynamodb2):
-#     print('moto_wrapper')
+#     logger.info('moto_wrapper')
 #     return partial(__mock_env, mock_sqs, mock_s3, mock_dynamodb2)
 
 
@@ -65,62 +55,90 @@ def __jsonfy_evn_details(env_detail, file_type):
 #     file_content = mock_s3.get_object(Bucket='Bucket', Key='/tmp/data/abc.txt')
 
 #     file_content = file_content["Body"].read().decode("utf-8")
-#     print("Test", file_content)
-
-
-@pytest.fixture(scope="function")
-def moto_wrapper(sqs_mock, s3_mock, dynamodb_mock, sns_mock):
-    print('moto_wrapper')
-    return partial(__mock_env, sqs_mock, s3_mock, dynamodb_mock, sns_mock)
+#     logger.info("Test", file_content)
 
 
 @pytest.fixture(scope="function")
 def s3_mock():
     with mock_s3():
-        print("\n S3 Up....")
+        logger.info("\n S3 Up....")
         yield boto3.client("s3")
-        print("\n S3 Down....")
+        logger.info("\n S3 Down....")
 
 
 @pytest.fixture(scope="function")
 def sqs_mock():
     with mock_sqs():
-        print("\n SQS Up....")
+        logger.info("\n SQS Up....")
         yield boto3.client("sqs")
-        print("\n SQS Down....")
+        logger.info("\n SQS Down....")
 
 
 @pytest.fixture(scope="function")
 def dynamodb_mock():
     with mock_dynamodb2():
-        print("\n dynamoDB Up....")
+        logger.info("\n dynamoDB Up....")
         yield boto3.resource("dynamodb")
-        print("\n dynamoDB Down....")
+        logger.info("\n dynamoDB Down....")
 
 
 @pytest.fixture(scope="function")
 def sns_mock():
     with mock_sns():
-        print("\n SNS Up....")
+        logger.info("\n SNS Up....")
         yield boto3.client("sns")
-        print("\n SNS  Down....")
+        logger.info("\n SNS  Down....")
 
 
-def test_moto_lambda(moto_wrapper, s3_mock):
-    moto_wrapper('moto_test/test.yaml')
-    s3_mock.put_object(
-        Body='This is daya',
-        Bucket='Bucket',
-        Key='/tmp/data/abc.txt'
-    )
-    file_content = s3_mock.get_object(Bucket='Bucket', Key='/tmp/data/abc.txt')
+class AWSResourceInitializer(object):
 
-    file_content = file_content["Body"].read().decode("utf-8")
-    print("Test", file_content)
+    def __init__(self, sqs_mock, s3_mock, dynamodb_mock, sns_mock):
+        self.sqs_mock = sqs_mock
+        self.sns_mock = sns_mock
+        self.s3_mock = s3_mock
+        self.dynamodb_mock = dynamodb_mock
+
+    def mock_env(self, env_detail):
+        self.env_detail = env_detail
+        json_stack = jsonfy_evn_details(env_detail, 'yaml')
+
+        setup_list = json_stack.get("setup")
+        validate_resource = json_stack.get("validate")
+        global_config = validate_resource.get('global')
+        expected_testwise_res = validate_resource.get('expectedTestResourceOutput')
+        test_name_to_exp_res = {item['name']:item for item in expected_testwise_res}
+        wrapper_context = MotoWrapperContext(sqs=self.sqs_mock, s3=self.s3_mock, dynamodb=self.dynamodb_mock,
+                                             env_in_json=setup_list, sns=self.sns_mock,
+                                             test_name_to_exp_res=test_name_to_exp_res,global_config=global_config)
+        env_creator.prepare_env(wrapper_context)
+
+        return ResourceOutputValidator(wrapper_context, env_creator.initiator_handler)
 
 
-def test_moto_sqs_lambda(moto_wrapper, sqs_mock):
-    moto_wrapper('moto_test/test.yaml')
+class ResourceOutputValidator(object):
+
+    def __init__(self, wrapper_context, initiator_handler):
+        self.wrapper_context = wrapper_context
+        self.initiator_handler = initiator_handler
+
+    def validate_out(self, exp_resources_key_name):
+        logger.info('validate_out')
+        current_handler = self.initiator_handler
+        while current_handler:
+            current_handler.validate_resource(self.wrapper_context, exp_resources_key_name)
+            current_handler = current_handler.next_handler
+
+
+@pytest.fixture(scope="function")
+def test_manager(sqs_mock, s3_mock, dynamodb_mock, sns_mock):
+    logger.info('started')
+    yield AWSResourceInitializer(sqs_mock, s3_mock, dynamodb_mock, sns_mock)
+    logger.info('Waiting in test manager')
+
+
+def test_moto_sqs_lambda(test_manager, sqs_mock):
+    res_out_validator = test_manager.mock_env('moto_test/test.yaml')
+
     sqs_mock.send_message(QueueUrl='bp.dip.demo.fifo',
                           MessageBody=json.dumps("Hi... Message had received successfully"))
     logger.info("Message has been sent")
@@ -128,10 +146,11 @@ def test_moto_sqs_lambda(moto_wrapper, sqs_mock):
     response = sqs_mock.receive_message(QueueUrl='bp.dip.demo.fifo')
     received_json = response["Messages"][0]["Body"]
     logger.info(received_json)
+    res_out_validator.validate_out('validate_dc_event')
 
 
-def test_moto_sns_lambda(moto_wrapper, sns_mock, sqs_mock):
-    moto_wrapper('moto_test/test.yaml')
+def test_moto_sns_lambda(test_manager, sns_mock, sqs_mock):
+    test_manager.mock_env('moto_test/test.yaml')
     sns_obj = TestEnvContext.get_sns_resource('bpDipDemo_sns.fifo')
     msg = "Hi... Message had received successfully"
     sns_mock.publish(TopicArn=sns_obj['TopicArn'],
@@ -145,8 +164,8 @@ def test_moto_sns_lambda(moto_wrapper, sns_mock, sqs_mock):
     logger.info(received_json)
 
 
-def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
-    moto_wrapper('moto_test/test.yaml')
+def test_moto_dynamodb_lambda(test_manager, dynamodb_mock):
+    test_manager.mock_env('moto_test/test.yaml')
     dynamodb_table = dynamodb_mock.Table('dynamodb_table_name')
     dynamodb_table.put_item(
         Item={
@@ -164,4 +183,3 @@ def test_moto_dynamodb_lambda(moto_wrapper, dynamodb_mock):
         Key={"source_sys_name": "GXS", 'market': 'AU'}
     )
     logger.info("Successfully read item from dynamodb table")
-    

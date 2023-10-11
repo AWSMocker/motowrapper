@@ -10,7 +10,7 @@ class TestEnvContext(object):
     sns_name_to_resource_map = {}
 
 
-    # Singleton Object
+    #  Object
     def __new__(cls):
         raise NotImplemented('Class can not instantiated')
 

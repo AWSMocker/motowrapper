@@ -43,20 +43,26 @@ setup:
             Projection:
               ProjectionType: ALL
 validate:
-    - global:
-        - SNS:
+    global:
+        SNS:
           messageAttributes:
             - name: market
             - type: String
             - value: GB
-    - test:
+        DynamoDB:
+          - Name: dynamodb_table_name
+          - Key:
+            - name: source_sys_name
+            - type: String
+            - value: 'DIP'
+    expectedTestResourceOutput:
       - name: 'validate_dc_event'
-      - S3:
+        S3:
         - name: dip-sfg-integration-bucket
         - file:
           - localFile: test/output/product_config.xml
             s3FileName: inbound/producteso-au/product_config.xml
-      - SNS:
+        SNS:
           - Name: bp.dip.demo_sns.fifo
           - records:
             - body:
@@ -67,15 +73,13 @@ validate:
                 payload: "{'key': 'name', 'bucket': s3_bucket_name}"
                 messageDeduplicationId: 3321-2221-3321-3211
                 messageGroupId: 'GB:19'
-
-    - test:
       - name: 'invalid_validate_dc_event'
-      - S3:
+        S3:
         - name: dip-sfg-integration-bucket
         - file:
           - localFile: test/output/product_config.xml
             s3FileName: inbound/producteso-au/product_config.xml
-      - SNS:
+        SNS:
           - Name: bp.dip.demo_sns.fifo
           - records:
             - body:
